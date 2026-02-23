@@ -5,19 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dark Circle Detection</title>
     <style>
-        .container { text-align: center; font-family: sans-serif; padding: 20px; }
-        video { border-radius: 10px; background: #222; width: 100%; max-width: 500px; }
-        .result { margin-top: 15px; font-weight: bold; font-size: 1.2rem; color: #007bff; }
-        button { padding: 10px 20px; font-size: 1rem; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 5px; }
+        .container { text-align: center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+        video { border-radius: 10px; background: #222; width: 100%; max-width: 500px; border: 3px solid #ddd; }
+        .result { margin-top: 15px; font-weight: bold; font-size: 1.4rem; color: #333; }
+        .remedy-box { margin-top: 20px; text-align: left; background: #f9f9f9; padding: 15px; border-left: 5px solid #28a745; display: none; }
+        .remedy-box h4 { margin-top: 0; color: #28a745; }
+        button { padding: 12px 24px; font-size: 1rem; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 5px; transition: 0.3s; }
+        button:hover { background: #218838; }
+        ul { padding-left: 20px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h2>Healthcare AI - Dark Circle Analysis</h2>
         <video id="video" autoplay playsinline></video>
-        <br>
-        <button id="startBtn">🟢 Start Detection (10s)</button>
+        <br><br>
+        <button id="startBtn">🟢 Start 10s Analysis</button>
+        
         <div id="status" class="result">Ready</div>
+        
+        <div id="remedyContainer" class="remedy-box">
+            <h4>💡 Recommended Remedies:</h4>
+            <ul id="remedyList"></ul>
+        </div>
+
         <canvas id="canvas" style="display:none;"></canvas>
     </div>
 
@@ -26,28 +37,28 @@
         const startBtn = document.getElementById('startBtn');
         const status = document.getElementById('status');
         const canvas = document.getElementById('canvas');
+        const remedyContainer = document.getElementById('remedyContainer');
+        const remedyList = document.getElementById('remedyList');
         
-        // Change this to your Render URL after deployment
-        const API_URL = "http://127.0.0.1:8000/darkcircle"; 
+        const API_URL = "https://dark-circle-api-lyal.onrender.com/darkcircle"; 
 
         async function startDetection() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 video.srcObject = stream;
-                status.innerText = "Analyzing... keep your face steady";
+                status.innerText = "Analyzing... keep your face steady and well-lit";
+                remedyContainer.style.display = "none";
+                remedyList.innerHTML = "";
                 
-                let detections = 0;
-                let totalSamples = 0;
-                const duration = 10000; // 10 seconds
-                const intervalTime = 1000; // Sample every 1 second
+                let lastResult = null;
+                const duration = 10000; 
+                const intervalTime = 2000; // Sample every 2 seconds to avoid overwhelming the free-tier API
 
                 const interval = setInterval(async () => {
-                    // Capture frame
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
                     canvas.getContext('2d').drawImage(video, 0, 0);
                     
-                    // Convert to blob and send
                     canvas.toBlob(async (blob) => {
                         const formData = new FormData();
                         formData.append('image', blob, 'frame.jpg');
@@ -55,26 +66,39 @@
                         try {
                             const response = await fetch(API_URL, { method: 'POST', body: formData });
                             const data = await response.json();
-                            totalSamples++;
-                            if (data.result === "Dark circle detected") detections++;
+                            
+                            // Store the most recent result
+                            if (data.status) {
+                                lastResult = data;
+                            }
                         } catch (err) { console.error("API Error:", err); }
                     }, 'image/jpeg');
 
                 }, intervalTime);
 
-                // Stop after 10 seconds
                 setTimeout(() => {
                     clearInterval(interval);
-                    stream.getTracks().forEach(track => track.stop()); // Close webcam
+                    stream.getTracks().forEach(track => track.stop());
                     
-                    const resultText = detections > (totalSamples / 2) 
-                        ? "Result: Dark Circles Detected" 
-                        : "Result: No Dark Circles Detected";
-                    status.innerText = resultText;
+                    if (lastResult) {
+                        status.innerText = lastResult.status;
+                        
+                        // Show remedies if they exist
+                        if (lastResult.remedies && lastResult.remedies.length > 0) {
+                            remedyContainer.style.display = "block";
+                            lastResult.remedies.forEach(r => {
+                                const li = document.createElement('li');
+                                li.innerText = r;
+                                remedyList.appendChild(li);
+                            });
+                        }
+                    } else {
+                        status.innerText = "Analysis failed. Try again.";
+                    }
                 }, duration);
 
             } catch (err) {
-                status.innerText = "Webcam access denied";
+                status.innerText = "Webcam access denied or error occurred.";
             }
         }
 
